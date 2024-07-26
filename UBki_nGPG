@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# Function to install packages on Debian/Ubuntu
+install_debian_packages() {
+  sudo apt update
+  sudo apt install -y yubikey-manager yubikey-personalization scdaemon gnupg2 gnupg-agent pcscd pcsc-tools keychain
+}
+
+# Function to install packages on macOS
+install_macos_packages() {
+  brew install ykman ykpers gnupg pinentry-mac pcsc-tools keychain
+  brew services start pcscd
+  echo "pinentry-program /usr/local/bin/pinentry-mac" >> ~/.gnupg/gpg-agent.conf
+}
+
+# Detect OS and install packages
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  . /etc/os-release
+  if [[ "$ID" == "debian" || "$ID" == "ubuntu" ]]; then
+    install_debian_packages
+  else
+    echo "Unsupported Linux distribution"
+    exit 1
+  fi
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  if command -v brew &> /dev/null; then
+    install_macos_packages
+  else
+    echo "Homebrew is not installed. Please install it first."
+    exit 1
+  fi
+else
+  echo "Unsupported OS"
+  exit 1
+fi
+
+# Fetch the public key from YubiKey
+gpg --card-edit
+
+# After running --card-edit, fetch the key to the local keyring
+echo "Fetching key to local keyring..."
+read -p "Enter the GPG key ID: " KEY_ID
+gpg --recv-keys $KEY_ID
+
+# Get the keygrip and add it to sshcontrol
+echo "Adding keygrip to sshcontrol..."
+KEYGRIP=$(gpg --with-keygrip --list-secret-keys $KEY_ID | grep Keygrip | awk '{print $3}')
+echo $KEYGRIP >> ~/.gnupg/sshcontrol
+
+# Harden gpg.conf according to best practices
+echo "Hardening gpg.conf..."
+cat <<EOL >> ~/.gnupg/gpg.conf
+use-agent
+personal-cipher-preferences AES256 AES192 AES
+personal-digest-preferences SHA512 SHA384 SHA256
+default-preference-list AES256 AES192 AES SHA512 SHA384 SHA256
+cert-digest-algo SHA512
+digest-algo SHA512
+s2k-digest-algo SHA512
+s2k-mode 3
+s2k-count 65011712
+no-emit-version
+keyserver hkps://keys.openpgp.org
+keyserver-options auto-key-retrieve
+EOL
+
+# Configure gpg-agent.conf for better GPG agent handling
+echo "Configuring gpg-agent.conf..."
+cat <<EOL >> ~/.gnupg/gpg-agent.conf
+default-cache-ttl 600
+max-cache-ttl 7200
+enable-ssh-support
+EOL
+
+# Extract the key name for SSH
+echo "Extracting key name for SSH..."
+KEY_NAME=$(gpg --with-colons --fingerprint | grep fpr | head -n 1 | cut -d ':' -f 10)
+
+# Add Keychain and GPG environment variables to shell config
+echo "Adding Keychain and GPG environment variables to shell config..."
+SHELL_CONFIG="$HOME/.bashrc"
+[[ -f "$HOME/.zshrc" ]] && SHELL_CONFIG="$HOME/.zshrc"
+
+cat <<EOL >> $SHELL_CONFIG
+export GPG_TTY="\$(tty)"
+gpg-connect-agent updatestartuptty /bye > /dev/null
+export SSH_AUTH_SOCK=\$(gpgconf --list-dirs agent-ssh-socket)
+eval \$(keychain --eval --agents ssh,gpg --inherit any -q $KEY_NAME)
+EOL
+
+# Source the shell config to apply changes
+source $SHELL_CONFIG
+
+echo "Configuration complete. Please restart your terminal or run 'gpgconf --kill all' to apply changes."
