@@ -1,36 +1,56 @@
 #!/bin/bash
 
-# Function to install packages on Debian/Ubuntu
-install_debian_packages() {
+# Function to install packages using apt (Debian/Ubuntu)
+install_apt_packages() {
   sudo apt update
   sudo apt install -y yubikey-manager yubikey-personalization scdaemon gnupg2 gnupg-agent pcscd pcsc-tools keychain
 }
 
-# Function to install packages on macOS
-install_macos_packages() {
+# Function to install packages using brew (macOS)
+install_brew_packages() {
   brew install ykman ykpers gnupg pinentry-mac pcsc-tools keychain
   brew services start pcscd
   echo "pinentry-program /usr/local/bin/pinentry-mac" >> ~/.gnupg/gpg-agent.conf
 }
 
-# Detect OS and install packages
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-  . /etc/os-release
-  if [[ "$ID" == "debian" || "$ID" == "ubuntu" ]]; then
-    install_debian_packages
-  else
-    echo "Unsupported Linux distribution"
-    exit 1
-  fi
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-  if command -v brew &> /dev/null; then
-    install_macos_packages
-  else
-    echo "Homebrew is not installed. Please install it first."
-    exit 1
-  fi
+# Function to install packages using dnf (Fedora)
+install_dnf_packages() {
+  sudo dnf install -y yubikey-manager yubikey-personalization scdaemon gnupg2 gnupg-agent pcscd pcsc-tools keychain
+}
+
+# Function to install packages using yum (CentOS)
+install_yum_packages() {
+  sudo yum install -y epel-release
+  sudo yum install -y yubikey-manager yubikey-personalization scdaemon gnupg2 gnupg-agent pcscd pcsc-tools keychain
+}
+
+# Function to install packages using pacman (Arch Linux)
+install_pacman_packages() {
+  sudo pacman -Syu --noconfirm
+  sudo pacman -S --noconfirm yubikey-manager yubikey-personalization scdaemon gnupg pcsc-tools keychain
+}
+
+# Function to install packages using zypper (OpenSUSE)
+install_zypper_packages() {
+  sudo zypper refresh
+  sudo zypper install -y yubikey-manager yubikey-personalization scdaemon gnupg2 gnupg-agent pcscd pcsc-tools keychain
+}
+
+# Detect package manager and install packages
+if command -v apt &> /dev/null; then
+  install_apt_packages
+elif command -v brew &> /dev/null; then
+  install_brew_packages
+elif command -v dnf &> /dev/null; then
+  install_dnf_packages
+elif command -v yum &> /dev/null; then
+  install_yum_packages
+elif command -v pacman &> /dev/null; then
+  install_pacman_packages
+elif command -v zypper &> /dev/null; then
+  install_zypper_packages
 else
-  echo "Unsupported OS"
+  echo "Unsupported package manager. Please install the required packages manually."
   exit 1
 fi
 
